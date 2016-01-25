@@ -498,6 +498,53 @@ class J0(UnaryScalarOp):
         gz, = grads
         return [gz * -1 * j1(x)]
 
+    # def c_support_code(self):
+    #     return (
+    #         """
+    #         // For GPU support
+    #         #ifdef __CUDACC__
+    #         #define DEVICE __device__
+    #         #else
+    #         #define DEVICE
+    #         #endif
+    #
+    #         #ifndef _J0FUNCDEFINED
+    #         #define _J0FUNCDEFINED
+    #         DEVICE double _j0(double x){
+    #
+    #         /*taken from
+    #         Bernardo, J. M. (1976). Algorithm AS 103:
+    #         Psi (Digamma) Function. Applied Statistics. 25 (3), 315-317.
+    #         http://www.uv.es/~bernardo/1976AppStatist.pdf */
+    #
+    #         double y, R, psi_ = 0;
+    #         double S  = 1.0e-5;
+    #         double C = 8.5;
+    #         double S3 = 8.333333333e-2;
+    #         double S4 = 8.333333333e-3;
+    #         double S5 = 3.968253968e-3;
+    #         double D1 = -0.5772156649;
+    #
+    #         y = x;
+    #
+    #         if (y <= 0.0)
+    #            return psi_;
+    #
+    #         if (y <= S )
+    #             return D1 - 1.0/y;
+    #
+    #         while (y < C){
+    #             psi_ = psi_ - 1.0 / y;
+    #             y = y + 1;}
+    #
+    #         R = 1.0 / y;
+    #         psi_ = psi_ + log(y) - .5 * R ;
+    #         R= R*R;
+    #         psi_ = psi_ - R * (S3 - R * (S4 - R * S5));
+    #
+    #         return psi_;}
+    #         #endif
+    #         """)
     def c_support_code(self):
         return (
             """
@@ -511,38 +558,28 @@ class J0(UnaryScalarOp):
             #ifndef _J0FUNCDEFINED
             #define _J0FUNCDEFINED
             DEVICE double _j0(double x){
+            double ax,z;
+            double xx,y,ans,ans1,ans2;
 
-            /*taken from
-            Bernardo, J. M. (1976). Algorithm AS 103:
-            Psi (Digamma) Function. Applied Statistics. 25 (3), 315-317.
-            http://www.uv.es/~bernardo/1976AppStatist.pdf */
-
-            double y, R, psi_ = 0;
-            double S  = 1.0e-5;
-            double C = 8.5;
-            double S3 = 8.333333333e-2;
-            double S4 = 8.333333333e-3;
-            double S5 = 3.968253968e-3;
-            double D1 = -0.5772156649;
-
-            y = x;
-
-            if (y <= 0.0)
-               return psi_;
-
-            if (y <= S )
-                return D1 - 1.0/y;
-
-            while (y < C){
-                psi_ = psi_ - 1.0 / y;
-                y = y + 1;}
-
-            R = 1.0 / y;
-            psi_ = psi_ + log(y) - .5 * R ;
-            R= R*R;
-            psi_ = psi_ - R * (S3 - R * (S4 - R * S5));
-
-            return psi_;}
+            if ((ax=fabs(x)) < 8.0) {
+            y=x*x;
+            ans1=57568490574.0+y*(-13362590354.0+y*(651619640.7
+             +y*(-11214424.18+y*(77392.33017+y*(-184.9052456)))));
+            ans2=57568490411.0+y*(1029532985.0+y*(9494680.718
+             +y*(59272.64853+y*(267.8532712+y*1.0))));
+            ans=ans1/ans2;
+            } else {
+            z=8.0/ax;
+            y=z*z;
+            xx=ax-0.785398164;
+            ans1=1.0+y*(-0.1098628627e-2+y*(0.2734510407e-4
+             +y*(-0.2073370639e-5+y*0.2093887211e-6)));
+            ans2 = -0.1562499995e-1+y*(0.1430488765e-3
+             +y*(-0.6911147651e-5+y*(0.7621095161e-6
+             -y*0.934935152e-7)));
+            ans=sqrt(0.636619772/ax)*(cos(xx)*ans1-z*sin(xx)*ans2);
+            }
+            return ans;}
             #endif
             """)
 
