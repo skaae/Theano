@@ -421,8 +421,8 @@ class J1(UnaryScalarOp):
             #define DEVICE
             #endif
 
-            #ifndef _PSIFUNCDEFINED
-            #define _PSIFUNCDEFINED
+            #ifndef _J1FUNCDEFINED
+            #define _J1FUNCDEFINED
             DEVICE double _j1(double x){
 
             /*taken from
@@ -502,8 +502,8 @@ class J0(UnaryScalarOp):
             #define DEVICE
             #endif
 
-            #ifndef _PSIFUNCDEFINED
-            #define _PSIFUNCDEFINED
+            #ifndef _J0FUNCDEFINED
+            #define _J0FUNCDEFINED
             DEVICE double _j0(double x){
 
             /*taken from
