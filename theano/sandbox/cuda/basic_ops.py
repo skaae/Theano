@@ -152,7 +152,7 @@ class GpuFromHost(GpuOp):
 
     def R_op(self, inputs, eval_points):
         ev, = eval_points
-        [self(ev)]
+        return [self(ev)]
 
     def infer_shape(self, node, xshp):
         return xshp
@@ -3008,7 +3008,7 @@ class GpuAdvancedIncSubtensor1_dev20(GpuAdvancedIncSubtensor1):
                        32: tensor.basic._convert_to_int32,
                        64: tensor.basic._convert_to_int64
         }
-        intwidth = theano.gof.compiledir.python_int_bitwidth()
+        intwidth = theano.configdefaults.python_int_bitwidth()
         ilist_ = convert_map[intwidth](ilist_)
 
         assert x_.type.dtype == y_.type.dtype
@@ -3681,6 +3681,13 @@ class GpuAllocEmpty(GpuOp):
         # instance, so we can do this only for that variable.
         output.type.filter_checks_isfinite = False
         return Apply(self, shape, [output])
+
+    def debug_perform(self, node, inputs, out_):
+        self.perform(self, node, inputs, out_)
+        # __setitem__ is limited on CudaNdarray
+        tmp = numpy.empty(out_[0][0].shape, dtype='float32')
+        tmp.fill(-123456789)
+        out_[0][0][:] = tmp
 
     def perform(self, node, inputs, out_):
         out, = out_

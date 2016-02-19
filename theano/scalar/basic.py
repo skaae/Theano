@@ -1610,13 +1610,13 @@ def int_or_true_div(x_discrete, y_discrete):
                 "please use x // y for an integer division.",
                 DeprecationWarning,
                 stacklevel=4)
-            return 'int'
+            return int_div
         elif config.int_division == 'floatX':
-            return 'true'
+            return true_div
         else:
             raise NotImplementedError(config.int_division)
     else:
-        return 'true'
+        return true_div
 
 
 def div_proxy(x, y):
@@ -1624,8 +1624,8 @@ def div_proxy(x, y):
     Proxy for either true_div or int_div, depending on types of x, y.
 
     """
-    f = eval('%s_div' % int_or_true_div(as_scalar(x).type in discrete_types,
-                                        as_scalar(y).type in discrete_types))
+    f = int_or_true_div(as_scalar(x).type in discrete_types,
+                        as_scalar(y).type in discrete_types)
     return f(x, y)
 
 
@@ -1671,7 +1671,7 @@ class TrueDiv(BinaryScalarOp):
         # This is different from it not being connected
         # to the output; x/y is still a function of x
         # and y; it's just a step function.
-        if (x / y).type in discrete_types:
+        if all(a.dtype in discrete_types for a in (x, y)):
             return [x.zeros_like(), y.zeros_like()]
 
         first_part = gz / y

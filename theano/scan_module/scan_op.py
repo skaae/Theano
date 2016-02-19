@@ -67,7 +67,7 @@ from six.moves import xrange
 
 import theano
 from theano.compat import exc_message
-from theano.compile import function, In, Param, Out
+from theano.compile import function, In, Out
 from theano.compile.mode import AddFeatureOptimizer
 from theano import compile, config, gradient, gof, tensor
 from theano.gof import PureOp, Apply
@@ -88,15 +88,6 @@ _logger = logging.getLogger('theano.scan_module.scan_op')
 
 
 from theano.configparser import AddConfigVar, BoolParam
-
-AddConfigVar('scan.allow_gc',
-             "Allow/disallow gc inside of Scan (default: False)",
-             BoolParam(False))
-
-AddConfigVar('scan.allow_output_prealloc',
-             "Allow/disallow memory preallocation for outputs inside of scan "
-             "(default: True)",
-             BoolParam(True))
 
 
 class Scan(PureOp):
@@ -839,7 +830,7 @@ class Scan(PureOp):
             # tap as not being preallocated
             self.mitmots_preallocated = [False] * self.n_mit_mot_outs
 
-            wrapped_inputs = [Param(x, borrow=True) for x in
+            wrapped_inputs = [In(x, borrow=True) for x in
                               self.inputs]
             wrapped_outputs = [Out(x, borrow=False) for x in
                                self.outputs[:slices]]

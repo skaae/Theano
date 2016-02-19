@@ -7,16 +7,17 @@ from theano import Apply, tensor, config, Variable
 from theano.scalar import as_scalar, constant, Log
 from theano.gradient import DisconnectedType, grad_not_implemented
 from theano.gof import Optimizer, local_optimizer, COp
-from theano.gof.type import CDataType, Generic
+from theano.gof.type import CDataType
 from theano.compile import optdb
 from theano.compile.ops import shape_i
-from theano.tensor.nnet import SoftmaxGrad
+from theano.tensor.nnet import LogSoftmax, SoftmaxGrad
 from theano.tensor.nnet.abstract_conv import get_conv_output_shape
-from theano.tensor.signal.downsample import (
-    DownsampleFactorMax, MaxPoolGrad, AveragePoolGrad)
+from theano.tensor.signal.pool import (
+    Pool, MaxPoolGrad, AveragePoolGrad)
 from theano.sandbox.cuda.type import CudaNdarrayType
 
-from theano.sandbox.cuda import GpuOp
+from theano.sandbox.cuda import GpuOp, dnn_available
+from theano.sandbox.cuda import dnn_version as version
 from theano.sandbox.cuda.basic_ops import (as_cuda_ndarray_variable,
                                            host_from_gpu,
                                            gpu_contiguous, HostFromGpu,
@@ -33,79 +34,6 @@ from theano.sandbox.cuda.nvcc_compiler import NVCC_compiler
 from theano.tensor.nnet.abstract_conv import (AbstractConv2d,
                                               AbstractConv2d_gradWeights,
                                               AbstractConv2d_gradInputs)
-
-
-def dnn_available():
-    if dnn_available.avail is None:
-        if not theano.sandbox.cuda.cuda_available:
-            dnn_available.msg = "CUDA not available"
-            dnn_available.avail = False
-            return False
-        dev = theano.sandbox.cuda.active_device_number()
-        if theano.sandbox.cuda.device_properties(dev)['major'] < 3:
-            dnn_available.msg = "Device not supported by cuDNN"
-            dnn_available.avail = False
-        else:
-            preambule = """
-#include <stdio.h>
-#include <cuda.h>
-#include <cudnn.h>
-#include <cudnn_helper.h>
-            """
-
-            body = """
-cudnnHandle_t _handle = NULL;
-cudnnStatus_t err;
-if ((err = cudnnCreate(&_handle)) != CUDNN_STATUS_SUCCESS) {
-  fprintf(stderr, "could not create cuDNN handle: %s",
-          cudnnGetErrorString(err));
-  return 1;
-}
-"""
-            params = ["-l", "cudnn", "-I" + os.path.dirname(__file__)]
-            if config.dnn.include_path:
-                params.append("-I" + config.dnn.include_path)
-            if config.dnn.library_path:
-                params.append("-L" + config.dnn.library_path)
-            if config.nvcc.compiler_bindir:
-                params.extend(['--compiler-bindir',
-                               config.nvcc.compiler_bindir])
-            # Do not run here the test program. It would run on the
-            # default gpu, not the one selected by the user. If mixed
-            # GPU are installed or if the GPUs are configured in
-            # exclusive mode, this cause bad detection.
-            comp, out, err = NVCC_compiler.try_flags(
-                flag_list=params, preambule=preambule, body=body,
-                try_run=False, output=True)
-
-            dnn_available.avail = comp
-            if not dnn_available.avail:
-                dnn_available.msg = (
-                    "Theano can not compile with cuDNN. We got this error:\n" +
-                    str(err))
-            else:
-                # If we can compile, check that we can import and run.
-                v = version()
-                if isinstance(v, tuple) and v[0] != v[1]:
-                    dnn_available.avail = False
-                    dnn_available.msg = ("Mixed dnn version. The header is"
-                                         " from one version, but we link with"
-                                         " a different version %s" % str(v))
-                    raise RuntimeError(dnn_available.msg)
-                if v == -1 or v[0] < 3007:
-                    # 3007 is the final release of cudnn v3
-                    dnn_available.avail = False
-                    dnn_available.msg = (
-                        "You have an old release of CuDNN (or a release "
-                        "candidate) that isn't supported.  Please update to "
-                        "at least v3 final version.")
-                    raise RuntimeError(dnn_available.msg)
-
-    return dnn_available.avail
-
-
-dnn_available.avail = None
-dnn_available.msg = None
 
 
 def c_set_tensor4d(var, desc, err, fail):
@@ -158,71 +86,13 @@ class DnnBase(GpuOp, COp):
         return ['cudnn.h', 'cudnn_helper.h']
 
     def c_header_dirs(self):
-        return [os.path.dirname(__file__)]
+        return [os.path.dirname(__file__), config.dnn.include_path]
 
     def c_libraries(self):
         return ['cudnn']
 
-
-class DnnVersion(GpuOp):
-    def c_compiler(self):
-        return NVCC_compiler
-
-    def c_headers(self):
-        return ['cudnn.h']
-
-    def c_libraries(self):
-        return ['cudnn']
-
-    def c_support_code(self):
-        return """
-#if PY_MAJOR_VERSION >= 3
-#define PyInt_FromLong PyLong_FromLong
-#endif
-"""
-
-    def make_node(self):
-        return Apply(self, [], [Generic()()])
-
-    def c_code(self, node, name, inputs, outputs, sub):
-        o = outputs[0]
-        return """
-        #if defined(CUDNN_VERSION)
-        %(o)s = PyTuple_Pack(2, PyInt_FromLong(CUDNN_VERSION), PyInt_FromLong(cudnnGetVersion()));
-        #else
-        %(o)s = PyInt_FromLong(-1);
-        #endif
-        """ % locals()
-
-    def do_constant_folding(self, node):
-        # Needed as we do not want to cache this information.
-        return False
-
-    def c_code_cache_version(self):
-        # Not needed, but make it clear that we do not want to cache this.
-        return None
-
-
-def version():
-    """Return the current cuDNN version we compile with.
-
-    This returns a tuple with the header version and the library
-    version we link with. For older cudnn version without version
-    information, we return -1.
-
-    """
-    if not dnn_available():
-        raise Exception(
-            "We can't determine the cudnn version as it is not available",
-            dnn_available.msg)
-
-    if version.v is None:
-        f = theano.function([], DnnVersion()(),
-                            theano.Mode(optimizer=None),
-                            profile=False)
-        version.v = f()
-    return version.v
-version.v = None
+    def c_lib_dirs(self):
+        return [config.dnn.library_path]
 
 
 class GpuDnnConvDesc(GpuOp):
@@ -240,10 +110,13 @@ class GpuDnnConvDesc(GpuOp):
         return ['cudnn.h', 'cudnn_helper.h']
 
     def c_header_dirs(self):
-        return [os.path.dirname(__file__)]
+        return [os.path.dirname(__file__), config.dnn.include_path]
 
     def c_libraries(self):
         return ['cudnn']
+
+    def c_lib_dirs(self):
+        return [config.dnn.library_path]
 
     def c_compiler(self):
         return NVCC_compiler
@@ -259,10 +132,10 @@ class GpuDnnConvDesc(GpuOp):
             assert len(border_mode) == len(subsample)
             border_mode = tuple(map(int, border_mode))
         if not ((isinstance(border_mode, tuple) and min(border_mode) >= 0) or
-                border_mode in ('valid', 'full')):
+                border_mode in ('valid', 'full', 'half')):
             raise ValueError(
                 'invalid border_mode {}, which must be either '
-                '"valid", "full", an integer or a pair of'
+                '"valid", "full", "half", an integer or a pair of'
                 ' integers'.format(border_mode))
         self.border_mode = border_mode
         assert len(subsample) in [2, 3]
@@ -292,12 +165,14 @@ class GpuDnnConvDesc(GpuOp):
         if isinstance(self.border_mode, tuple):
             pad_desc = tuple(map(int, self.border_mode))
             assert min(pad_desc) >= 0
-            bmode = 2
+            bmode = 1
         else:
             pad_desc = [0] * nb_dim
 
             if self.border_mode == "valid":
                 bmode = 1
+            elif self.border_mode == "half":
+                bmode = 2
             else:
                 assert self.border_mode == "full"
                 bmode = 0
@@ -343,6 +218,14 @@ class GpuDnnConvDesc(GpuOp):
         pad[2] = *(npy_int64 *)PyArray_GETPTR1(%(kern_shape)s, 4) - 1;
     }
   }
+  // Adjust padding values if using half convolution
+  else if (%(bmode)d == 2) {
+    pad[0] = *(npy_int64 *)PyArray_GETPTR1(%(kern_shape)s, 2) / 2;
+    pad[1] = *(npy_int64 *)PyArray_GETPTR1(%(kern_shape)s, 3) / 2;
+    if (%(nb_dim)d >= 3) {
+        pad[2] = *(npy_int64 *)PyArray_GETPTR1(%(kern_shape)s, 4) / 2;
+    }
+  }
 
   err = cudnnSetConvolutionNdDescriptor_v3(
   %(desc)s,
@@ -365,7 +248,7 @@ class GpuDnnConvDesc(GpuOp):
            upscale_str=upscale_str, nb_dim=nb_dim, precision=precision)
 
     def c_code_cache_version(self):
-        return (3, version())
+        return (4, version())
 
 # scalar constants
 _zero = constant(numpy.asarray(0.0, dtype='float32'))
@@ -1097,7 +980,7 @@ def dnn_conv(img, kerns, border_mode='valid', subsample=(1, 1),
     kerns
         Convolution filters.
     border_mode
-        One of 'valid', 'full'; additionally, the padding size can be
+        One of 'valid', 'full', 'half'; additionally, the padding size can be
         directly specified by an integer or a pair of integers (as a tuple),
         specifying the amount of zero padding added to _both_ the top and
         bottom (first entry) and left and right (second entry) sides of
@@ -1129,6 +1012,9 @@ def dnn_conv(img, kerns, border_mode='valid', subsample=(1, 1),
         :attr:`config.dnn.conv.precision`.
 
     """
+    # For consistence, when using direction_hint too.
+    if border_mode == (0, 0):
+        border_mode = 'valid'
 
     # Establish dtype in which to perform the computation of the convolution
     if precision is None:
@@ -1210,11 +1096,11 @@ def dnn_conv3d(img, kerns, border_mode='valid', subsample=(1, 1, 1),
 
     :param img: images to do the convolution over
     :param kerns: convolution filters
-    :param border_mode: One of 'valid', 'full'; additionally, the padding
-        size can be directly specified by an integer or a pair of integers
-        (as a tuple), specifying the amount of zero padding added to _both_
-        the top and bottom (first entry) and left and right (second entry)
-        sides of the image.
+    :param border_mode: One of 'valid', 'full', 'half'; additionally, the
+        padding size can be directly specified by an integer or a triplet of
+        integers (as a tuple), specifying the amount of zero padding added to
+        _both_ the top and bottom (first entry) and left and right (second
+        entry) and front and back (third entry) sides of the volume.
     :param subsample: perform subsampling of the output (default: (1, 1, 1))
     :param conv_mode: perform convolution (kernels flipped) or
         cross-correlation. One of 'conv', 'cross'. (default: 'conv')
@@ -1239,6 +1125,8 @@ def dnn_conv3d(img, kerns, border_mode='valid', subsample=(1, 1, 1),
     :warning: dnn_conv3d only works with cuDNN library 3.0
 
     """
+    if border_mode == (0, 0):
+        border_mode = 'valid'
 
     # Establish dtype in which to perform the computation of the convolution
     if precision is None:
@@ -1374,10 +1262,13 @@ class GpuDnnPoolDesc(GpuOp):
         return ['cudnn.h', 'cudnn_helper.h']
 
     def c_header_dirs(self):
-        return [os.path.dirname(__file__)]
+        return [os.path.dirname(__file__), config.dnn.include_path]
 
     def c_libraries(self):
         return ['cudnn']
+
+    def c_lib_dirs(self):
+        return [config.dnn.library_path]
 
     def c_compiler(self):
         return NVCC_compiler
@@ -1401,6 +1292,10 @@ class GpuDnnPoolDesc(GpuOp):
             raise RuntimeError("CuDNN pooling with padding requires CuDNN v2")
         if self.get_ndim() == 3 and version() < (3000, 3000):
             raise RuntimeError("CuDNN 3d pooling requires CuDNN v3")
+        if (mode == 'average_exc_pad' and max(pad) > 0 and
+                version() < (4004, 4004)):
+            raise RuntimeError(
+                "CuDNN pooling mode 'average_exc_pad' requires at least v4")
 
     def get_ndim(self):
         return len(self.ws)
@@ -2299,11 +2194,11 @@ if True:
             return [dnn_pool(gpu_contiguous(img), ds, ds)]
 
     @register_opt('cudnn')
-    @local_optimizer([DownsampleFactorMax])
+    @local_optimizer([Pool])
     def local_pool_dnn_alternative(node):
         if not dnn_available():
             return
-        if isinstance(node.op, DownsampleFactorMax):
+        if isinstance(node.op, Pool):
             if not node.op.ignore_border:
                 return
             img, = node.inputs
@@ -2396,11 +2291,12 @@ if True:
             return [out]
 
     @register_opt('cudnn')
-    @local_optimizer([GpuElemwise])
+    @local_optimizer([GpuElemwise, LogSoftmax])
     def local_log_softmax_dnn(node):
         # The log-softmax implementation is only available starting at CuDNN V3
         if not dnn_available() or version() < (3000, 3000):
             return
+
         if (isinstance(node.op, GpuElemwise) and
                 isinstance(node.op.scalar_op, Log) and
                 node.inputs[0].owner and
@@ -2414,6 +2310,21 @@ if True:
                                              'log', softmax_node.op.mode)
             new_log_softmax = new_softmax_node(softmax_node.inputs[0])
             return [new_log_softmax]
+
+        elif (isinstance(node.op, LogSoftmax) and node.inputs[0].owner and
+              isinstance(node.inputs[0].owner.op, HostFromGpu)):
+            if not dnn_available():
+                return
+
+            # Transform the input in the format expected by GpuDnnSoftmax
+            inp = node.inputs[0].owner.inputs[0]
+            if inp.ndim != 2:
+                return
+            inp = inp.dimshuffle(0, 1, 'x', 'x')
+
+            # Apply GpuDnnSoftmax and return the result
+            out = GpuDnnSoftmax('bc01', 'log', 'channel')(gpu_contiguous(inp))
+            return [out.dimshuffle(0, 1)]
 
     class NoCuDNNRaise(Optimizer):
         def apply(self, fgraph):

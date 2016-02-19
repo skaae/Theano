@@ -53,12 +53,6 @@ from six import StringIO
 
 _logger = logging.getLogger('theano.tensor.opt')
 
-theano.configparser.AddConfigVar('on_shape_error',
-                                 "warn: print a warning and use the default"
-                                 " value. raise: raise an error",
-                                 theano.configparser.EnumStr("warn", "raise"),
-                                 in_c_key=False)
-
 # Utilities
 
 
@@ -228,13 +222,6 @@ def broadcast_like(value, template, fgraph, dtype=None):
                              str(template.broadcastable))
 
     return rval
-
-
-theano.configparser.AddConfigVar(
-    'tensor.insert_inplace_optimizer_validate_nb',
-    "-1: auto, if graph have less then 500 nodes 1, else 10",
-    theano.configparser.IntParam(-1),
-    in_c_key=False)
 
 
 def inplace_elemwise_optimizer_op(OP):
@@ -886,7 +873,7 @@ class ShapeFeature(object):
     just for the ConvOp.  All that's necessary to do shape
     inference is 1) to mark shared inputs as having a particular
     shape, either via a .tag or some similar hacking; and 2) to
-    add an optional Param() argument to promise that inputs will
+    add an optional In() argument to promise that inputs will
     have a certain shape (or even to have certain shapes in
     certain dimensions). We can't automatically infer the shape of
     shared variables as they can change of shape during the
@@ -1608,26 +1595,6 @@ local_elemwise_alloc = register_specialize(
     gof.local_optimizer([T.Elemwise])(
         local_elemwise_alloc_op(T.Elemwise, T.Alloc, T.DimShuffle)),
     'local_alloc_elemwise')
-
-theano.configparser.AddConfigVar('experimental.local_alloc_elemwise',
-                                 "DEPRECATED: If True, enable the experimental"
-                                 " optimization local_alloc_elemwise."
-                                 " Generates error if not True. Use"
-                                 " optimizer_excluding=local_alloc_elemwise"
-                                 " to dsiable.",
-                                 theano.configparser.BoolParam(
-                                     True,
-                                     is_valid=lambda x: x
-                                 ),
-                                 in_c_key=False)
-
-# False could make the graph faster but not as safe.
-theano.configparser.AddConfigVar(
-    'experimental.local_alloc_elemwise_assert',
-    "When the local_alloc_elemwise is applied, add"
-    " an assert to highlight shape errors.",
-    theano.configparser.BoolParam(True),
-    in_c_key=False)
 
 
 @gof.local_optimizer([T.Elemwise])
@@ -3705,7 +3672,7 @@ def local_mul_switch_sink(node):
 
                     fct = [T.switch(switch.inputs[0], 0,
                                     fmul)]
-                    fct[0].values_eq_approx = values_eq_approx_remove_nan
+                    fct[0].tag.values_eq_approx = values_eq_approx_remove_nan
 
                     # Copy over stacktrace for switch op from both previous
                     #  elementwise multiplication op and previous switch op,
@@ -3729,7 +3696,7 @@ def local_mul_switch_sink(node):
 
                     fct = [T.switch(switch.inputs[0],
                                     fmul, 0)]
-                    fct[0].values_eq_approx = values_eq_approx_remove_nan
+                    fct[0].tag.values_eq_approx = values_eq_approx_remove_nan
 
                     # Copy over stacktrace for switch op from both previous
                     # elementwise multiplication op and previous switch op,
@@ -3773,7 +3740,7 @@ def local_div_switch_sink(node):
 
                 fct = [T.switch(switch.inputs[0], 0,
                                 fdiv)]
-                fct[0].values_eq_approx = values_eq_approx_remove_nan
+                fct[0].tag.values_eq_approx = values_eq_approx_remove_nan
 
                 # Copy over stacktrace for switch op from both previous
                 # elementwise division op and previous switch op,
@@ -3795,7 +3762,7 @@ def local_div_switch_sink(node):
 
                 fct = [T.switch(switch.inputs[0],
                                 fdiv, 0)]
-                fct[0].values_eq_approx = values_eq_approx_remove_nan
+                fct[0].tag.values_eq_approx = values_eq_approx_remove_nan
 
                 # Copy over stacktrace for switch op from both previous
                 # elementwise division op and previous switch op,
@@ -4665,23 +4632,23 @@ def local_useless_elemwise_comparison(node):
     if isinstance(node.op.scalar_op, scalar.LT) and \
        node.inputs[0].owner and \
        isinstance(node.inputs[0].owner.op, Shape_i) and \
-       T.extract_constant(node.inputs[1]) == 0:
+       T.extract_constant(node.inputs[1], only_process_constants=True) == 0:
         return [T.zeros_like(node.inputs[0], dtype=node.outputs[0].dtype)]
     # Elemwise[GE](X.shape[i], 0) -> Elemwise[ones](X)
     if isinstance(node.op.scalar_op, scalar.GE) and \
        node.inputs[0].owner and \
        isinstance(node.inputs[0].owner.op, Shape_i) and \
-       T.extract_constant(node.inputs[1]) == 0:
+       T.extract_constant(node.inputs[1], only_process_constants=True) == 0:
         return [T.ones_like(node.inputs[0], dtype=node.outputs[0].dtype)]
     # Elemwise[maximum](X.shape[i], 0) -> X.shape[i]
     if isinstance(node.op.scalar_op, scalar.Maximum) and \
        node.inputs[0].owner and \
        isinstance(node.inputs[0].owner.op, Shape_i) and \
-       T.extract_constant(node.inputs[1]) == 0:
+       T.extract_constant(node.inputs[1], only_process_constants=True) == 0:
         return [node.inputs[0]]
     # Elemwise[maximum](0, X.shape[i]) -> X.shape[i]
     if isinstance(node.op.scalar_op, scalar.Maximum) and \
-       T.extract_constant(node.inputs[0]) == 0 and \
+       T.extract_constant(node.inputs[0], only_process_constants=True) == 0 and \
        node.inputs[1].owner and \
        isinstance(node.inputs[1].owner.op, Shape_i):
         return [node.inputs[1]]
@@ -4689,11 +4656,11 @@ def local_useless_elemwise_comparison(node):
     if isinstance(node.op.scalar_op, scalar.Minimum) and \
        node.inputs[0].owner and \
        isinstance(node.inputs[0].owner.op, Shape_i) and \
-       T.extract_constant(node.inputs[1]) == 0:
+       T.extract_constant(node.inputs[1], only_process_constants=True) == 0:
         return [T.zeros_like(node.inputs[0], dtype=node.outputs[0].dtype)]
     # Elemwise[minimum](0, X.shape[i]) -> 0
     if isinstance(node.op.scalar_op, scalar.Minimum) and \
-       T.extract_constant(node.inputs[0]) == 0 and \
+       T.extract_constant(node.inputs[0], only_process_constants=True) == 0 and \
        node.inputs[1].owner and \
        isinstance(node.inputs[1].owner.op, Shape_i):
         return [T.zeros_like(node.inputs[1], dtype=node.outputs[0].dtype)]
@@ -4705,7 +4672,7 @@ def local_useless_elemwise_comparison(node):
        isinstance(node.inputs[0].owner.op.scalar_op, scalar.Add) and \
        all([isinstance(var.owner and var.owner.op, Shape_i)
             for var in node.inputs[0].owner.inputs]) and \
-       T.extract_constant(node.inputs[1]) == 0:
+       T.extract_constant(node.inputs[1], only_process_constants=True) == 0:
 
         return [T.zeros_like(node.inputs[0], dtype=node.outputs[0].dtype)]
     # Elemwise[GE](add([anything that is shapes]), 0) -> Elemwise[ones](X)
@@ -4715,7 +4682,7 @@ def local_useless_elemwise_comparison(node):
        isinstance(node.inputs[0].owner.op.scalar_op, scalar.Add) and \
        all([isinstance(var.owner and var.owner.op, Shape_i)
             for var in node.inputs[0].owner.inputs]) and \
-       T.extract_constant(node.inputs[1]) == 0:
+       T.extract_constant(node.inputs[1], only_process_constants=True) == 0:
         return [T.ones_like(node.inputs[0], dtype=node.outputs[0].dtype)]
 
     return
@@ -5599,7 +5566,7 @@ def local_log_add(node):
 
                 ret = max_pre + T.log1p(T.exp(T.add(*[p - max_pre
                                                       for p in pre_exp])))
-                ret.values_eq_approx = values_eq_approx_remove_inf
+                ret.tag.values_eq_approx = values_eq_approx_remove_inf
                 return [ret]
 
 
@@ -5826,38 +5793,6 @@ register_stabilize(topo_constant_folding, 'fast_compile', final_opt=True)
 register_specialize(topo_constant_folding, 'fast_compile', final_opt=True)
 
 
-def _is_1(expr):
-    """
-
-    Returns
-    -------
-    bool
-        True iff expr is a constant close to 1.
-
-    """
-    try:
-        v = get_scalar_constant_value(expr)
-        return numpy.allclose(v, 1)
-    except NotScalarConstantError:
-        return False
-
-
-def _is_minus1(expr):
-    """
-
-    Returns
-    -------
-    bool
-        True iff expr is a constant close to -1.
-
-    """
-    try:
-        v = get_scalar_constant_value(expr)
-        return numpy.allclose(v, -1)
-    except NotScalarConstantError:
-        return False
-
-
 def get_clients(node):
     """
     Used by erf/erfc opt to track less frequent op.
@@ -5881,7 +5816,7 @@ def get_clients2(node):
 
 # 1+erf(x)=>erfc(-x)
 local_one_plus_erf = gof.PatternSub((T.add,
-                                     dict(pattern='y', constraint=_is_1),
+                                     1,
                                      (T.erf, 'x')),
                                     (T.erfc, (T.neg, 'x')),
                                     allow_multiple_clients=True,
@@ -5894,7 +5829,7 @@ register_specialize(local_one_plus_erf)
 
 # 1-erf(x)=>erfc(x)
 local_one_minus_erf = gof.PatternSub((T.sub,
-                                      dict(pattern='y', constraint=_is_1),
+                                      1,
                                       (T.erf, 'x')),
                                      (T.erfc, 'x'),
                                      allow_multiple_clients=True,
@@ -5916,7 +5851,7 @@ register_specialize(local_one_minus_erf2)
 # 1+(-erf(x))=>erfc(x) This is a different graph then the previous as
 # the canonicalize don't work completly
 local_one_plus_neg_erf = gof.PatternSub((T.add,
-                                         dict(pattern='y', constraint=_is_1),
+                                         1,
                                          (T.neg, (T.erf, 'x'))),
                                         (T.erfc, 'x'),
                                         allow_multiple_clients=True,
@@ -5930,7 +5865,7 @@ register_specialize(local_one_plus_neg_erf)
 # (-1)+erf(x) => -erfc(x) don't need erf(x)+(-1) as the canonicalize
 # will put the -1 as the first argument.
 local_erf_minus_one = gof.PatternSub((T.add,
-                                      dict(pattern='y', constraint=_is_minus1),
+                                      -1,
                                       (T.erf, 'x')),
                                      (T.neg, (T.erfc, 'x')),
                                      allow_multiple_clients=True,
@@ -5943,7 +5878,7 @@ register_specialize(local_erf_minus_one)
 
 # 1-erfc(x) => erf(x)
 local_one_minus_erfc = gof.PatternSub((T.sub,
-                                       dict(pattern='y', constraint=_is_1),
+                                       1,
                                        (T.erfc, 'x')),
                                       (T.erf, 'x'),
                                       allow_multiple_clients=True,
@@ -5981,7 +5916,7 @@ register_specialize(local_one_minus_erfc3)
 # 1+(-erfc(x)) => erf(x) This is a different graph then the previous as
 # the canonicalize don't work completly
 local_one_add_neg_erfc = gof.PatternSub((T.add,
-                                         dict(pattern='y', constraint=_is_1),
+                                         1,
                                          (T.neg, (T.erfc, 'x'))),
                                         (T.erf, 'x'),
                                         allow_multiple_clients=True,
@@ -5995,7 +5930,7 @@ register_specialize(local_one_add_neg_erfc)
 
 # (-1)+erfc(-x)=>erf(x)
 local_erf_neg_minus_one = gof.PatternSub((T.add,
-                                          dict(pattern='y', constraint=_is_minus1),
+                                          -1,
                                           (T.erfc, (T.neg, 'x'))),
                                          (T.erf, 'x'),
                                          allow_multiple_clients=True,
@@ -6008,7 +5943,7 @@ register_specialize(local_erf_neg_minus_one)
 
 # (-1)+erfc(-1*x)=>erf(x)
 local_erf_neg_minus_one2 = gof.PatternSub((T.add,
-                                           dict(pattern='y', constraint=_is_minus1),
+                                           -1,
                                            (T.erfc, (T.mul, -1, 'x'))),
                                           (T.erf, 'x'),
                                           allow_multiple_clients=True,
@@ -6055,7 +5990,7 @@ def local_log_erfc(node):
         threshold = 26.641747557
 
     ret = T.switch(x < threshold, node.outputs[0], stab_value)
-    ret.values_eq_approx = values_eq_approx_remove_inf
+    ret.tag.values_eq_approx = values_eq_approx_remove_inf
     return [ret]
 
 
@@ -6207,7 +6142,7 @@ def local_grad_log_erfc_neg(node):
     ret = T.switch(x < threshold, true_div_no_mul, stab_value)
     if y:
         ret = T.mul(ret, *y)
-    ret.values_eq_approx = values_eq_approx_remove_inf_nan
+    ret.tag.values_eq_approx = values_eq_approx_remove_inf_nan
     return [ret]
     """
 The libm used for the test is amdlibm

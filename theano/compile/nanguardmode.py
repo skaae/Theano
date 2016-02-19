@@ -6,31 +6,10 @@ from six.moves import StringIO
 import numpy as np
 
 import theano
-from theano.configparser import config, AddConfigVar, BoolParam, EnumStr
+from theano.configparser import config
 import theano.tensor as T
 import theano.sandbox.cuda as cuda
 from theano.compile import Mode
-
-AddConfigVar('NanGuardMode.nan_is_error',
-             "Default value for nan_is_error",
-             BoolParam(True),
-             in_c_key=False)
-
-AddConfigVar('NanGuardMode.inf_is_error',
-             "Default value for inf_is_error",
-             BoolParam(True),
-             in_c_key=False)
-
-AddConfigVar('NanGuardMode.big_is_error',
-             "Default value for big_is_error",
-             BoolParam(True),
-             in_c_key=False)
-
-AddConfigVar('NanGuardMode.action',
-             "What NanGuardMode does when it finds a problem",
-             EnumStr('raise', 'warn', 'pdb'),
-             in_c_key=False)
-
 
 logger = logging.getLogger("theano.compile.nanguardmode")
 
@@ -220,7 +199,7 @@ class NanGuardMode(Mode):
     # We currently loose the 3 first params frequently, when calling
     # mode.including() and variant.
     def __init__(self, nan_is_error=None, inf_is_error=None, big_is_error=None,
-                 optimizer=None, linker=None):
+                 optimizer='default', linker=None):
         self.provided_optimizer = optimizer
         if nan_is_error is None:
             nan_is_error = config.NanGuardMode.nan_is_error

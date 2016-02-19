@@ -29,7 +29,8 @@ from theano.tensor.nnet import (categorical_crossentropy,
                                 Prepend_scalar_constant_to_each_row,
                                 Prepend_scalar_to_each_row,
                                 relu,
-                                h_softmax)
+                                h_softmax,
+                                elu)
 from theano.tensor import matrix, vector, lvector, scalar
 
 
@@ -189,6 +190,9 @@ class T_LogSoftmax(utt.InferShapeTester):
         utt.verify_grad(f, [numpy.random.rand(4)])
 
     def test_allclose(self):
+        m = theano.config.mode
+        m = theano.compile.get_mode(m)
+        m.check_isfinite = False
         x, y = tensor.matrices('xy')
         # regular softmax and crossentropy
         sm = tensor.nnet.softmax(x)
@@ -214,7 +218,7 @@ class T_LogSoftmax(utt.InferShapeTester):
         # now show that the two versions result in the same crossentropy cost
         # this indicates that the forward function does provide some numerical
         # stability
-        f2 = theano.function([x, y], [cm, cm2])
+        f2 = theano.function([x, y], [cm, cm2], mode=m)
         cm_, cm2_ = f2(a, b)
         utt.assert_allclose(cm_, cm2_)
 
@@ -248,6 +252,9 @@ class T_LogSoftmax(utt.InferShapeTester):
         grad and that the new operation does not explode for big inputs.
         Note that only the grad is checked.
         """
+        m = theano.config.mode
+        m = theano.compile.get_mode(m)
+        m.check_isfinite = False
         # some inputs that are large to make the gradient explode in the non
         # optimized case
         a = numpy.exp(10*numpy.random.rand(5, 10).astype(theano.config.floatX))
@@ -257,7 +264,7 @@ class T_LogSoftmax(utt.InferShapeTester):
             logsm = tensor.log(sm)
             return logsm
         # We set step to 0.1 because for big values we need a big epsilon
-        utt.verify_grad(myfunc, [a], eps=0.1)
+        utt.verify_grad(myfunc, [a], eps=0.1, mode=m)
 
 
 class T_SoftmaxGrad(utt.InferShapeTester):
@@ -1614,6 +1621,30 @@ def test_h_softmax():
     #############
     x_mat = numpy.random.normal(size=(batch_size, input_size)).astype(floatX)
     y_mat = numpy.random.randint(0, output_size, batch_size).astype('int32')
-    
-    assert(fun_output_tg(x_mat, y_mat).shape == (batch_size,))
-    assert(fun_output(x_mat).shape == (batch_size, output_size))
+
+    tg_output = fun_output_tg(x_mat, y_mat)
+    all_outputs = fun_output(x_mat)
+
+    assert(tg_output.shape == (batch_size,))
+    assert(all_outputs.shape == (batch_size, output_size))
+
+    # Verifies that the outputs computed by fun_output_tg are the same as those
+    # computed by fun_output.
+    utt.assert_allclose(
+            all_outputs[numpy.arange(0, batch_size), y_mat], tg_output)
+
+
+def test_elu():
+    x = matrix('x')
+    seed = theano.tests.unittest_tools.fetch_seed()
+    rng = numpy.random.RandomState(seed)
+    X = rng.randn(20, 30).astype(config.floatX)
+
+    # test the base case, without custom alpha value
+    y = elu(x).eval({x: X})
+    utt.assert_allclose(y, numpy.where(X > 0, X, numpy.exp(X) - 1))
+
+    # test for different constant alpha values
+    for alpha in 1.5, 2, -1, -1.5, -2:
+        y = elu(x, alpha).eval({x: X})
+        utt.assert_allclose(y, numpy.where(X > 0, X, alpha * (numpy.exp(X) - 1)))
