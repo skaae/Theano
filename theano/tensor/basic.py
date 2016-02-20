@@ -2213,6 +2213,16 @@ def j1(a):
 
 
 @_scal_elemwise
+def i0(a):
+    """Modified Bessel function of the 0'th kind"""
+
+
+@_scal_elemwise
+def i1(a):
+    """Modified Bessel function of the 1'th kind"""
+
+
+@_scal_elemwise
 def real(z):
     """Return real component of complex-valued tensor `z`"""
 _tensor_py_operators.real = property(real)

@@ -291,7 +291,17 @@ def j0_inplace(a):
 
 @_scal_inplace
 def j1_inplace(a):
-    """Bessel function of the 0'th kind"""
+    """Bessel function of the 1'th kind"""
+
+
+@_scal_inplace
+def i0_inplace(a):
+    """Modified Bessel function of the 0'th kind"""
+
+
+@_scal_inplace
+def i1_inplace(a):
+    """Modified Bessel function of the 1'th kind"""
 
 
 @_scal_inplace
