@@ -843,4 +843,4 @@ class I1e(UnaryScalarOp):
             return """%(z)s =
                 _i1e(%(x)s);""" % locals()
         raise NotImplementedError('only floating point is implemented')
-i1e = I1(upgrade_to_float, name='i1e')
+i1e = I1e(upgrade_to_float, name='i1e')
