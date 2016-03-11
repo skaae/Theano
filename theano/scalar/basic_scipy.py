@@ -371,37 +371,9 @@ class Chi2SF(BinaryScalarOp):
 chi2sf = Chi2SF(upgrade_to_float, name='chi2sf')
 
 
-class J1(UnaryScalarOp):
-    """
-    Bessel function of the 1'th kind
-    """
-
-    @staticmethod
-    def st_impl(x):
-        return scipy.special.j1(x)
-
-    def impl(self, x):
-        if imported_scipy_special:
-            return self.st_impl(x)
-        else:
-            super(J1, self).impl(x)
-
-    def grad(self, inp, grads):
-        raise NotImplementedError()
-
-    def c_code(self, node, name, inp, out, sub):
-        x, = inp
-        z, = out
-        if node.inputs[0].type in float_types:
-            return """%(z)s =
-                j1(%(x)s);""" % locals()
-        raise NotImplementedError('only floating point is implemented')
-j1 = J1(upgrade_to_float, name='j1')
-
-
 class J0(UnaryScalarOp):
     """
-    Bessel function of the 0'th kind
+    Bessel function of the first kind - order 0
     """
 
     @staticmethod
@@ -427,6 +399,34 @@ class J0(UnaryScalarOp):
                 j0(%(x)s);""" % locals()
         raise NotImplementedError('only floating point is implemented')
 j0 = J0(upgrade_to_float, name='j0')
+
+
+class J1(UnaryScalarOp):
+    """
+    Bessel function of the first kind - order 1
+    """
+
+    @staticmethod
+    def st_impl(x):
+        return scipy.special.j1(x)
+
+    def impl(self, x):
+        if imported_scipy_special:
+            return self.st_impl(x)
+        else:
+            super(J1, self).impl(x)
+
+    def grad(self, inp, grads):
+        raise NotImplementedError()
+
+    def c_code(self, node, name, inp, out, sub):
+        x, = inp
+        z, = out
+        if node.inputs[0].type in float_types:
+            return """%(z)s =
+                j1(%(x)s);""" % locals()
+        raise NotImplementedError('only floating point is implemented')
+j1 = J1(upgrade_to_float, name='j1')
 
 
 cephes_chbevl_support_code = """
@@ -606,7 +606,7 @@ i0 = I0(upgrade_to_float, name='i0')
 
 class I0e(UnaryScalarOp):
     """
-    Modified Bessel function of the first kind, order 0 - exponentially scaled
+    Modified Bessel function of the first kind, order 0 - exp. scaled
     """
 
     @staticmethod
@@ -643,7 +643,7 @@ class I0e(UnaryScalarOp):
 
             #ifndef _I0EFUNCDEFINED
             #define _I0EFUNCDEFINED
-            DEVICE double i0e(double x)
+            DEVICE double _i0e(double x)
             {
                 double y;
 
@@ -768,7 +768,21 @@ class I1(UnaryScalarOp):
             cephes_chbevl_support_code +
             cephes_i1_constants_support_code +
             """
-            double i1(double x)
+            // For GPU support
+            #ifdef __CUDACC__
+            #define DEVICE __device__
+            #else
+            #define DEVICE
+            #endif
+
+            /*
+             * Cephes Math Library Release 2.8:  June, 2000
+             * Copyright 1984, 1987, 2000 by Stephen L. Moshier
+             */
+
+            #ifndef _I1FUNCDEFINED
+            #define _I1FUNCDEFINED
+            double _i1(double x)
             {
                 double y, z;
 
@@ -784,6 +798,7 @@ class I1(UnaryScalarOp):
                     z = -z;
                 return (z);
             }
+            #endif
             """)
 
     def c_code(self, node, name, inp, out, sub):
@@ -797,7 +812,7 @@ i1 = I1(upgrade_to_float, name='i1')
 
 class I1e(UnaryScalarOp):
     """
-    Modified Bessel function of the first kind, order 1 - exponentially scaled
+    Modified Bessel function of the first kind, order 1 - exp. scaled
     """
 
     @staticmethod
@@ -818,8 +833,21 @@ class I1e(UnaryScalarOp):
             cephes_chbevl_support_code +
             cephes_i1_constants_support_code +
             """
-            double i1e(double x) {
-            {
+            // For GPU support
+            #ifdef __CUDACC__
+            #define DEVICE __device__
+            #else
+            #define DEVICE
+            #endif
+
+            /*
+             * Cephes Math Library Release 2.8:  June, 2000
+             * Copyright 1984, 1987, 2000 by Stephen L. Moshier
+             */
+
+            #ifndef _I1EFUNCDEFINED
+            #define _I1EFUNCDEFINED
+            double _i1e(double x) {
                 double y, z;
 
                 z = fabs(x);
@@ -834,6 +862,7 @@ class I1e(UnaryScalarOp):
                     z = -z;
                 return (z);
             }
+            #endif
             """)
 
     def c_code(self, node, name, inp, out, sub):
