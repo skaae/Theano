@@ -678,7 +678,7 @@ cephes_i1_constants_support_code = """
  *
  * lim(x->0){ exp(-x) I1(x) / x } = 1/2.
  */
-static double A[] = {
+static double _I1_A[] = {
     2.77791411276104639959E-18,
     -2.11142121435816608115E-17,
     1.55363195773620046921E-16,
@@ -715,7 +715,7 @@ static double A[] = {
  *
  * lim(x->inf){ exp(-x) sqrt(x) I1(x) } = 1/sqrt(2pi).
  */
-static double B[] = {
+static double _I1_B[] = {
     7.51729631084210481353E-18,
     4.41434832307170791151E-18,
     -4.65030536848935832153E-17,
@@ -853,10 +853,10 @@ class I1e(UnaryScalarOp):
                 z = fabs(x);
                 if (z <= 8.0) {
                     y = (z / 2.0) - 2.0;
-                    z = chbevl(y, A, 29) * z;
+                    z = chbevl(y, _I1_A, 29) * z;
                 }
                 else {
-                    z = chbevl(32.0 / z - 2.0, B, 25) / sqrt(z);
+                    z = chbevl(32.0 / z - 2.0, _I1_B, 25) / sqrt(z);
                 }
                 if (x < 0.0)
                     z = -z;
