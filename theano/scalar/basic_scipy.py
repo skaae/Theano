@@ -479,7 +479,7 @@ cephes_i0_constants_support_code = """
  *
  * lim(x->0){ exp(-x) I0(x) } = 1.
  */
-DEVICE double _get_I0_A(){
+DEVICE double[] _get_I0_A(){
     double _I0_A[] = {
         -4.41534164647933937950E-18,
         3.33079451882223809783E-17,
@@ -520,7 +520,7 @@ DEVICE double _get_I0_A(){
  *
  * lim(x->inf){ exp(-x) sqrt(x) I0(x) } = 1/sqrt(2pi).
  */
-DEVICE double _get_I0_B(){
+DEVICE double[] _get_I0_B(){
     double _I0_B[] = {
         -7.23318048787475395456E-18,
         -4.83050448594418207126E-18,
@@ -548,7 +548,7 @@ DEVICE double _get_I0_B(){
         3.36911647825569408990E-3,
         8.04490411014108831608E-1
     };
-    return _I0_B
+    return _I0_B;
 }
 #endif
 """
@@ -695,7 +695,7 @@ cephes_i1_constants_support_code = """
  *
  * lim(x->0){ exp(-x) I1(x) / x } = 1/2.
  */
-DEVICE double _get_I1_A(){
+DEVICE double[] _get_I1_A(){
     double _I1_A[] = {
     2.77791411276104639959E-18,
     -2.11142121435816608115E-17,
@@ -735,7 +735,7 @@ DEVICE double _get_I1_A(){
  *
  * lim(x->inf){ exp(-x) sqrt(x) I1(x) } = 1/sqrt(2pi).
  */
-DEVICE double _get_I1_A(){
+DEVICE double[] _get_I1_A(){
     double _I1_B[] = {
     7.51729631084210481353E-18,
     4.41434832307170791151E-18,
