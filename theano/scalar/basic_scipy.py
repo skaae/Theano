@@ -854,7 +854,6 @@ class I1e(UnaryScalarOp):
     def c_support_code(self):
         return (
             cephes_chbevl_support_code +
-            cephes_i1_constants_support_code +
             """
             // For GPU support
             #ifdef __CUDACC__
